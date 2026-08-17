@@ -1032,9 +1032,35 @@ function waitForStylesheets() {
     });
   }));
 }
+// Guarantees each of `urls` is present as a loaded stylesheet link,
+// reusing one already on the page if it finds it (so it never double-
+// fetches something the page already linked) or creating it otherwise.
+// This removes any dependency on some other part of the page having
+// inserted - and by the right time - the stylesheets discovery needs;
+// some hosting/embed setups don't guarantee either, so this takes
+// ownership instead of assuming it.
+function ensureStylesheetsLoaded(urls) {
+  return Promise.all((urls || []).map(url => new Promise(resolve => {
+    let link = document.querySelector(`link[rel="stylesheet"][href="${url}"]`);
+    if (link && link.sheet) {
+      resolve();
+      return;
+    }
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.crossOrigin = "anonymous";
+      link.href = url;
+      document.head.appendChild(link);
+    }
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", resolve, { once: true });
+  })));
+}
 // Start parser loading alongside style discovery.
 const parserReady = loadOpenTypeParser();
-waitForStylesheets()
+ensureStylesheetsLoaded(typeof FONT_STYLESHEET_URLS !== "undefined" ? FONT_STYLESHEET_URLS : [])
+  .then(() => waitForStylesheets())
   .then(() => discoverFontStyles(parserReady))
   .then(() => {
     document.querySelectorAll(".fe-editor").forEach(root => {
