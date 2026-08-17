@@ -508,7 +508,7 @@ async function discoverFontStyles(parserReady) {
     });
   });
 }
-
+ 
 const DEFAULT_LABEL_BY_TAG = Object.fromEntries(OT_FEATURES.map(f => [f.tag, f.label]));
 // Normalises a feature entry to a tag and label.
 function normaliseFeatureEntry(entry) {
@@ -1017,9 +1017,25 @@ function loadOpenTypeParser() {
     document.head.appendChild(script);
   });
 }
+// Font discovery needs document.styleSheets to already reflect the font
+// <link> tags. Inline/parser-blocking scripts normally get this for
+// free (a script after a pending stylesheet waits for it), but that
+// guarantee breaks for async scripts or ones inserted by other JS - so
+// this waits explicitly instead of assuming it.
+function waitForStylesheets() {
+  const links = [...document.querySelectorAll('link[rel="stylesheet"]')];
+  return Promise.all(links.map(link => {
+    if (link.sheet) return Promise.resolve();
+    return new Promise(resolve => {
+      link.addEventListener("load", resolve, { once: true });
+      link.addEventListener("error", resolve, { once: true });
+    });
+  }));
+}
 // Start parser loading alongside style discovery.
 const parserReady = loadOpenTypeParser();
-discoverFontStyles(parserReady)
+waitForStylesheets()
+  .then(() => discoverFontStyles(parserReady))
   .then(() => {
     document.querySelectorAll(".fe-editor").forEach(root => {
       root.dispatchEvent(new Event("fontstylesready"));
