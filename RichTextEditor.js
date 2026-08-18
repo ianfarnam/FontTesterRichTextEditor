@@ -34,6 +34,33 @@ function closestBlock(node, demo) {
   const div = el ? el.closest("div") : null;
   return (div && demo.contains(div)) ? div : demo;
 }
+// Finds the nearest ancestor tagged [data-sample-group] - the element
+// whose content the Sample dropdown swaps out entirely when an option
+// is chosen.
+function closestSampleGroup(node, demo) {
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  const group = el ? el.closest("[data-sample-group]") : null;
+  return (group && demo.contains(group)) ? group : null;
+}
+// The single [data-sample-group] element every non-empty text node in
+// `target` belongs to, or null if that set is empty, mixed, or includes
+// content outside any group - an ambiguous or groupless selection gets
+// no sample swap option.
+function singleSampleGroupForTarget(target, demo) {
+  const groups = new Set();
+  let touchedAny = false;
+  targetElements(target).forEach(element => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (!node.textContent.trim()) continue;
+      touchedAny = true;
+      groups.add(closestSampleGroup(node, demo));
+    }
+  });
+  if (!touchedAny || groups.size !== 1) return null;
+  return [...groups][0];
+}
 // Resolves logical alignment to a physical direction.
 function resolvePhysicalAlign(align, direction) {
   if (align === "start") return direction === "rtl" ? "right" : "left";
@@ -393,6 +420,8 @@ function featuresForFamily(family) {
 }
 // Build one editor's controls.
 function buildControls(root) {
+  const controlsOuter = document.createElement("div");
+  controlsOuter.className = "fe-controls-outer";
   const controls = document.createElement("div");
   controls.className = "fe-controls";
 // Keep background clicks inside the controls panel.
@@ -462,6 +491,12 @@ function buildControls(root) {
   styleField.appendChild(document.createTextNode("Style"));
   styleField.appendChild(styleDropdown.element);
   menuRow.appendChild(styleField);
+  const sampleDropdown = createFontDropdown("fe-sample-dropdown");
+  const sampleField = document.createElement("div");
+  sampleField.className = "fe-dropdown-field";
+  sampleField.appendChild(document.createTextNode("Sample"));
+  sampleField.appendChild(sampleDropdown.element);
+  menuRow.appendChild(sampleField);
   const ALIGN_ICONS = {
     left: '<rect x="1" y="1" width="18" height="2"/><rect x="1" y="6" width="12" height="2"/><rect x="1" y="11" width="15" height="2"/>',
     center: '<rect x="1" y="1" width="18" height="2"/><rect x="4" y="6" width="12" height="2"/><rect x="2.5" y="11" width="15" height="2"/>',
@@ -492,7 +527,14 @@ function buildControls(root) {
   const otFeaturesButton = document.createElement("button");
   otFeaturesButton.type = "button";
   otFeaturesButton.className = "fe-ot-button";
-  otFeaturesButton.textContent = "OpenType Features";
+  const otFeaturesLabel = document.createElement("span");
+  otFeaturesLabel.textContent = "Features"; 
+  const otFeaturesArrow = document.createElement("span");
+  otFeaturesArrow.className = "fe-dropdown-arrow";
+  otFeaturesArrow.setAttribute("aria-hidden", "true");
+  otFeaturesArrow.innerHTML = '<svg viewBox="0 0 12 8" width="12" height="8" fill="currentColor"><path d="M1 1l5 5 5-5"/></svg>';
+  otFeaturesButton.appendChild(otFeaturesLabel);
+  otFeaturesButton.appendChild(otFeaturesArrow);
   const otFeaturesPopup = document.createElement("div");
   otFeaturesPopup.className = "fe-ot-popup";
   otWrapper.appendChild(otFeaturesButton);
@@ -507,11 +549,12 @@ function buildControls(root) {
     '</svg>';
   menuRow.appendChild(resetButton);
   controls.appendChild(menuRow);
-  root.appendChild(controls);
+  controlsOuter.appendChild(controls);
+  root.appendChild(controlsOuter);
   return {
-    controls, slider, slider2, slider3, familyDropdown, styleDropdown,
+    controls, controlsOuter, slider, slider2, slider3, familyDropdown, styleDropdown,
     resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, uppercaseButton,
-    slidersToggle,
+    slidersToggle, sampleDropdown, sampleField,
   };
 }
 // Per-editor setup.
@@ -519,9 +562,9 @@ function initFontEditor(root) {
   const demo = root.querySelector(".fe-demo");
   demo.spellcheck = false;
   const {
-    controls, slider, slider2, slider3, familyDropdown, styleDropdown,
+    controls, controlsOuter, slider, slider2, slider3, familyDropdown, styleDropdown,
     resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, uppercaseButton,
-    slidersToggle,
+    slidersToggle, sampleDropdown, sampleField,
   } = buildControls(root);
   const initialDemoHTML = demo.innerHTML;
   const initialSliderValue = slider.value;
@@ -531,6 +574,9 @@ function initFontEditor(root) {
   let activeContainer = demo;
 // Reference element after a collapsed cursor.
   let caretReferenceElement = null;
+// The [data-sample-group] element the Sample dropdown's current
+// options apply to - set by updateSampleControl, read by its onChange.
+  let currentSampleGroupEl = null;
 // Rebuild feature controls only when the family changes.
   let currentFeatureFamily = undefined;
 // Rebuilds the OpenType feature controls.
@@ -709,6 +755,38 @@ function initFontEditor(root) {
       style: `${computed.fontStyle}|${computed.fontWeight}`,
     };
   }
+// Populates the Sample dropdown from whichever single [data-sample-group]
+// the current selection is entirely within, reading its options from the
+// matching <template data-sample-texts-for="...">. Each option's value
+// is that template entry's innerHTML - the exact markup that replaces
+// the group's entire current content when chosen. Hidden whenever that
+// group is ambiguous (a selection spanning more than one, or none) or
+// has no template of its own to offer.
+  function updateSampleControl() {
+    const groupEl = selectedSpan
+      ? singleSampleGroupForTarget(selectedSpan, demo)
+      : closestSampleGroup(activeContainer, demo);
+    currentSampleGroupEl = groupEl;
+    const groupName = groupEl ? groupEl.dataset.sampleGroup : null;
+    const template = groupName
+      ? root.querySelector(`template[data-sample-texts-for="${CSS.escape(groupName)}"]`)
+      : null;
+    const options = template
+      ? [...template.content.children].map(optionEl => ({
+          value: optionEl.innerHTML,
+          label: optionEl.dataset.label || "Untitled",
+        }))
+      : [];
+    sampleField.style.display = options.length ? "" : "none";
+    sampleDropdown.setOptions(options);
+    if (!options.length) {
+      sampleDropdown.value = "";
+      return;
+    }
+    const currentHTML = groupEl.innerHTML.trim();
+    const match = options.find(opt => opt.value.trim() === currentHTML);
+    sampleDropdown.value = match ? match.value : "";
+  }
   function updateFontControls() {
     const { family, actualFamily, style } = inspectReferenceFont();
     const familyValue = family
@@ -722,6 +800,7 @@ function initFontEditor(root) {
     updateAlignControls();
     updateUppercaseControl();
     updateSliderControls();
+    updateSampleControl();
   }
 // Treat a multi-paragraph group as one target.
   function closestParagraphGroup(node, demo) {
@@ -763,12 +842,12 @@ function initFontEditor(root) {
     }
   });
   root.addEventListener("focusin", () => {
-    controls.classList.add("visible");
+    controlsOuter.classList.add("visible");
   });
   root.addEventListener("focusout", () => {
     requestAnimationFrame(() => {
       if (!root.contains(document.activeElement)) {
-        controls.classList.remove("visible");
+        controlsOuter.classList.remove("visible");
       }
     });
   });
@@ -812,15 +891,28 @@ function initFontEditor(root) {
     applyStyleEntry(selectedSpan, apply);
     updateFontControls();
   });
+  sampleDropdown.onChange(() => {
+    if (!currentSampleGroupEl || !sampleDropdown.value) return;
+    currentSampleGroupEl.innerHTML = sampleDropdown.value;
+// The old selection lived in nodes that no longer exist - start fresh
+// with the whole swapped-in group as the active target.
+    selectedSpan = null;
+    activeContainer = currentSampleGroupEl;
+    caretReferenceElement = null;
+    updateFontControls();
+  });
   otFeaturesButton.addEventListener("click", (e) => {
     e.stopPropagation();
-    otFeaturesPopup.classList.toggle("visible");
+    const open = !otFeaturesPopup.classList.contains("visible");
+    otFeaturesPopup.classList.toggle("visible", open);
+    otFeaturesButton.classList.toggle("open", open);
   });
   document.addEventListener("click", (e) => {
     if (otFeaturesPopup.classList.contains("visible") &&
         !otFeaturesPopup.contains(e.target) &&
         e.target !== otFeaturesButton) {
       otFeaturesPopup.classList.remove("visible");
+      otFeaturesButton.classList.remove("open");
     }
   });
   alignButtons.forEach(btn => {
