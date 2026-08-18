@@ -98,20 +98,39 @@ function makeBlockRange(sourceRange, block) {
   }
   return result;
 }
+// Walks demo's text nodes in document order, returning the distinct
+// blocks (per closestBlock - the nearest <p>, else nearest <div>, else
+// demo itself) that `range` actually touches. Driven by text nodes
+// rather than a fixed tag query so it catches ANY block boundary the
+// range crosses, not just <p>.
+function collectRangeBlocks(range, demo) {
+  const blocks = [];
+  const seen = new Set();
+  const walker = document.createTreeWalker(demo, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.textContent.trim()) continue;
+    if (!rangeIntersectsNode(range, node)) continue;
+    const block = closestBlock(node, demo);
+    if (!seen.has(block)) {
+      seen.add(block);
+      blocks.push(block);
+    }
+  }
+  return blocks;
+}
 function wrapSelection(range) {
-// Use one span per paragraph for multi-paragraph selections.
+// Use one span per block for selections crossing block boundaries.
   const demo = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
     ? range.commonAncestorContainer.closest(".fe-demo")
     : range.commonAncestorContainer.parentElement?.closest(".fe-demo");
-  const paragraphs = demo
-    ? [...demo.querySelectorAll("p")].filter(p => rangeIntersectsNode(range, p))
-    : [];
-  if (paragraphs.length <= 1) {
+  const blocks = demo ? collectRangeBlocks(range, demo) : [];
+  if (blocks.length <= 1) {
     return wrapContentsInSpan(range);
   }
 // Process from the end so ranges stay valid.
   const spans = [];
-  [...paragraphs].reverse().forEach(block => {
+  [...blocks].reverse().forEach(block => {
     const blockRange = makeBlockRange(range, block);
     if (!blockRange.collapsed) {
       spans.unshift(wrapContentsInSpan(blockRange));
@@ -423,15 +442,12 @@ function buildControls(root) {
   const slidersToggle = document.createElement("button");
   slidersToggle.type = "button";
   slidersToggle.className = "fe-sliders-toggle";
+  slidersToggle.title = "Sliders";
   slidersToggle.setAttribute("aria-expanded", "false");
-  const slidersToggleLabel = document.createElement("span");
-  slidersToggleLabel.textContent = "Sliders";
-  const slidersToggleArrow = document.createElement("span");
-  slidersToggleArrow.className = "fe-dropdown-arrow";
-  slidersToggleArrow.setAttribute("aria-hidden", "true");
-  slidersToggleArrow.innerHTML = '<svg viewBox="0 0 12 8" width="12" height="8" fill="currentColor"><path d="M1 1l5 5 5-5"/></svg>';
-  slidersToggle.appendChild(slidersToggleLabel);
-  slidersToggle.appendChild(slidersToggleArrow);
+  slidersToggle.innerHTML = '<svg viewBox="0 0 20 14" width="20" height="14" fill="currentColor">' +
+    '<rect x="1" y="3" width="18" height="2"/><rect x="1" y="9" width="18" height="2"/>' +
+    '<circle cx="6" cy="4" r="3"/><circle cx="14" cy="10" r="3"/>' +
+    '</svg>';
   menuRow.appendChild(slidersToggle);
   const familyDropdown = createFontDropdown("fe-family-dropdown");
   familyDropdown.setOptions(FAMILY_OPTIONS);
@@ -485,7 +501,10 @@ function buildControls(root) {
   const resetButton = document.createElement("button");
   resetButton.type = "button";
   resetButton.className = "fe-reset-button";
-  resetButton.textContent = "Reset";
+  resetButton.title = "Reset";
+  resetButton.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
+    '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>' +
+    '</svg>';
   menuRow.appendChild(resetButton);
   controls.appendChild(menuRow);
   root.appendChild(controls);
