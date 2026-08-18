@@ -1,4 +1,6 @@
   const FAMILY_OPTIONS = [
+  { value: '"AM Toscana"', label: "AM Toscana" },
+  { value: '"Hinterland"', label: "Hinterland" },
   { value: '"Leafy Sans"', label: "Leafy Sans" },
   { value: '"Leafy Banner"', label: "Leafy Banner" },
   { value: '"Leafy Display"', label: "Leafy Display" },
@@ -38,10 +40,22 @@ const OT_FEATURES = [
   { tag: "ss11", label: "Stylistic Set 11" },
   { tag: "ss12", label: "Stylistic Set 12" },
   { tag: "ss13", label: "Stylistic Set 13" },
+  { tag: "ss14", label: "Stylistic Set 14" },
+  { tag: "ss15", label: "Stylistic Set 15" },
+  { tag: "ss16", label: "Stylistic Set 16" },
+  { tag: "ss17", label: "Stylistic Set 17" },
+  { tag: "ss18", label: "Stylistic Set 18" },
+  { tag: "ss19", label: "Stylistic Set 19" },
+  { tag: "ss20", label: "Stylistic Set 20" },
 ];
 // OpenType feature settings
 // Defines which features appear for each family.
 const FAMILY_FEATURES = {
+  "am toscana": [
+    "case",
+     ],
+  "hinterland": [
+     "ordn", "sinf", "frac", { tag: "ss01", label: "Roman T H" },{ tag: "ss02", label: "Uncial F" }, ],
   "leafy text": [
     "liga", "dlig", "calt", "smcp", "c2sc", "case",
     "onum", "tnum", "ordn", "sinf", "titl", { tag: "ss01", label: "E Blob" },{ tag: "ss02", label: "Long s" }, { tag: "ss03", label: "Angular italic v w" }, { tag: "ss04", label: "Single-Story Italic g"  }, { tag: "ss05", label: "Bulgarian Cyrillic"  }, ],
@@ -70,6 +84,12 @@ const FAMILY_FEATURES = {
 // EDIT THESE to match your actual font files - the weights below are
 // placeholders, not verified against the real @font-face declarations.
 const FAMILY_STYLES = {
+  "am toscana": [
+    { label: "Regular", apply: { fontFamily: '"AM Toscana"', fontStyle: "normal", fontWeight: "400" } },
+    ],
+  "hinterland": [
+    { label: "Regular", apply: { fontFamily: '"Hinterland"', fontStyle: "normal", fontWeight: "400" } },
+    ],
   "leafy text": [
     { label: "Regular", apply: { fontFamily: '"Leafy Text"', fontStyle: "normal", fontWeight: "400" } },
     { label: "Italic", apply: { fontFamily: '"Leafy Text"', fontStyle: "italic", fontWeight: "400" } },
