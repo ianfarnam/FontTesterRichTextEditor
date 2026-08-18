@@ -356,6 +356,9 @@ function createFontDropdown(wrapperClass) {
         value = opt.value;
         render();
         setOpen(false);
+// Keeps focus inside root - render() just destroyed this row, which
+// otherwise strands focus on <body> and breaks click-outside-to-close.
+        button.focus();
         listeners.forEach(fn => fn());
       });
       popup.appendChild(row);
@@ -528,7 +531,7 @@ function buildControls(root) {
   otFeaturesButton.type = "button";
   otFeaturesButton.className = "fe-ot-button";
   const otFeaturesLabel = document.createElement("span");
-  otFeaturesLabel.textContent = "OpenType Features";
+  otFeaturesLabel.textContent = "Features";
   const otFeaturesArrow = document.createElement("span");
   otFeaturesArrow.className = "fe-dropdown-arrow";
   otFeaturesArrow.setAttribute("aria-hidden", "true");
