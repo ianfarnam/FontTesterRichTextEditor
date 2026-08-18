@@ -2,32 +2,23 @@
 function normalizeFamily(value) {
   return value.replace(/^["']|["']$/g, "").trim().toLowerCase();
 }
-// Maps configured variant names to their base family.
-let familyVariantIndex = new Map();
-function buildFamilyVariantIndex(familyNames) {
-  const names = new Set(familyNames.map(normalizeFamily).filter(Boolean));
-  const index = new Map();
-  Object.entries(FAMILY_VARIANT_WORDS || {}).forEach(([base, variants]) => {
-    if (!names.has(base)) return;
-    variants.forEach(variant => {
-      const candidate = normalizeFamily(`${base} ${variant}`);
-      if (names.has(candidate)) {
-        index.set(candidate, { base, variant });
-      }
-    });
+// Reverse lookup: normalized applied font-family -> the FAMILY_STYLES
+// key it belongs to. Built once from FAMILY_STYLES so a style whose own
+// fontFamily differs from its family's key (an optical-size variant
+// declared under its own font-family name, e.g. Viktoria Nouveau's
+// Big/Medium/Small) is still recognized as belonging to that family.
+const FAMILY_BY_APPLIED_FONT_FAMILY = new Map();
+Object.entries(FAMILY_STYLES || {}).forEach(([key, styles]) => {
+  FAMILY_BY_APPLIED_FONT_FAMILY.set(key, key);
+  (styles || []).forEach(({ apply }) => {
+    if (apply && apply.fontFamily) {
+      FAMILY_BY_APPLIED_FONT_FAMILY.set(normalizeFamily(apply.fontFamily), key);
+    }
   });
-  return index;
-}
+});
 function canonicalFamily(value) {
   const family = normalizeFamily(value);
-  const entry = familyVariantIndex.get(family);
-  return entry ? entry.base : family;
-}
-// Returns the configured variant label.
-function familyVariantLabel(value) {
-  const family = normalizeFamily(value);
-  const entry = familyVariantIndex.get(family);
-  return entry ? entry.variant : null;
+  return FAMILY_BY_APPLIED_FONT_FAMILY.get(family) || family;
 }
 function isSelectionGroup(target) {
   return !!(target && target.__feSelectionGroup);
@@ -165,6 +156,19 @@ function applyStyleToElement(el, apply) {
   Object.keys(combined).forEach(jsProp => {
     el.style[jsProp] = combined[jsProp];
   });
+}
+// A weight/style-derived label used only to match "Bold" to "Bold" when
+// switching families (see findRoleMatch below) - never shown directly.
+function cssStyleFallbackLabel(weightStyle) {
+  const numeric = parseFloat(weightStyle.weight);
+  const weightNames = {
+    100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular",
+    450: "News", 500: "Medium", 600: "SemiBold", 700: "Bold",
+    800: "ExtraBold", 900: "Black",
+  };
+  let label = weightNames[numeric] || weightStyle.weight || "Regular";
+  if (weightStyle.style === "italic" && label !== "Italic") label += " Italic";
+  return label;
 }
 function roleForWeightStyle(weight, style) {
   return cssStyleFallbackLabel({ weight, style }).toLowerCase();
@@ -332,183 +336,28 @@ function createFontDropdown(wrapperClass) {
     onChange(fn) { listeners.push(fn); },
   };
 }
-// Font style discovery
-// Builds styles from the loaded @font-face rules.
+// Font styles
+// Built directly from FAMILY_STYLES (see head) - no runtime discovery.
 const STYLE_CATALOG = {};
-function cssUnquote(value) {
-  return (value || "").trim().replace(/^['"]|['"]$/g, "");
+Object.entries(FAMILY_STYLES || {}).forEach(([key, styles]) => {
+  STYLE_CATALOG[key] = (styles || []).map(({ label, apply }) => ({
+    label,
+    role: roleForWeightStyle(apply.fontWeight || "400", apply.fontStyle || "normal"),
+    apply,
+  }));
+});
+// Warms the browser's font cache for every configured style ahead of
+// time, so Style menu previews don't visibly pop in the first time the
+// menu is opened.
+function preloadStyleFace(apply) {
+  if (!("fonts" in document) || !apply || !apply.fontFamily) return;
+  const style = apply.fontStyle === "italic" ? "italic " : "";
+  document.fonts.load(`${style}${apply.fontWeight || "400"} 16px ${apply.fontFamily}`).catch(() => {});
 }
-function cssURLToAbsolute(url, baseURL) {
-  try {
-    return new URL(cssUnquote(url), baseURL).href;
-  } catch {
-    return cssUnquote(url);
-  }
-}
-// Reads the browser's parsed @font-face rules.
-function facesFromStyleSheets() {
-  const faces = [];
-  for (const sheet of document.styleSheets) {
-    let rules;
-    try {
-      rules = sheet.cssRules;
-    } catch {
-      continue;
-    }
-    if (!rules) continue;
-    for (const rule of rules) {
-      if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
-      const family = cssUnquote(rule.style.getPropertyValue("font-family"));
-      const weight = rule.style.getPropertyValue("font-weight") || "400";
-      const style = cssUnquote(rule.style.getPropertyValue("font-style")) || "normal";
-      const stretch = cssUnquote(rule.style.getPropertyValue("font-stretch"));
-      const src = rule.style.getPropertyValue("src");
-      const urls = [...src.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)]
-        .map(m => cssURLToAbsolute(m[2], sheet.href || document.baseURI));
-      if (family && urls.length) {
-        faces.push({ family, weight, style, stretch, url: urls[0] });
-      }
-    }
-  }
-  return faces;
-}
-function getOpenTypeName(font, nameKey) {
-  const value = font && font.names && font.names[nameKey];
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  return value.en || value["en-US"] || Object.values(value)[0] || "";
-}
-function normaliseStyleName(name, family) {
-  let label = (name || "").trim();
-  if (!label) return "";
-  const familyRe = new RegExp("^" + family.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s+", "i");
-  label = label.replace(familyRe, "");
-  return label || name.trim();
-}
-async function readFontFaceMetadata(face, parserReady) {
-// Role comes from weight/style; label comes from the font metadata.
-  const role = cssStyleFallbackLabel(face).toLowerCase();
-// Add the variant name to the displayed label.
-  const variant = familyVariantLabel(face.family);
-  const combineLabel = (rawLabel) => {
-    if (!variant) return rawLabel;
-    if (!rawLabel) return variant;
-    const lower = rawLabel.toLowerCase();
-    if (lower === "regular") return variant;
-    if (lower === variant.toLowerCase() || lower.startsWith(variant.toLowerCase() + " ")) return rawLabel;
-    return `${variant} ${rawLabel}`;
-  };
-  const fallback = () => ({
-    label: combineLabel(cssStyleFallbackLabel(face)),
-    role,
-    apply: {
-      fontFamily: `"${face.family}"`,
-      fontStyle: face.style || "normal",
-      fontWeight: face.weight || "400",
-      ...(face.stretch ? { fontStretch: face.stretch } : {}),
-    },
-    family: face.family,
-  });
-  try {
-// Start the font download without waiting for the parser.
-    const [buffer, opentypeLib] = await Promise.all([
-      fetch(face.url, { mode: "cors" }).then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.arrayBuffer();
-      }),
-      parserReady,
-    ]);
-    if (!opentypeLib) return fallback();
-    const font = opentypeLib.parse(buffer);
-// Prefer the typographic family/subfamily names when available.
-    const subfamily = getOpenTypeName(font, "preferredSubfamily") || getOpenTypeName(font, "fontSubfamily");
-    const fullName = getOpenTypeName(font, "fullName");
-    const familyName = getOpenTypeName(font, "preferredFamily") || getOpenTypeName(font, "fontFamily");
-    const label = normaliseStyleName(subfamily || fullName, familyName || face.family);
-    return {
-      label: combineLabel(label) || `${face.style === "italic" ? "Italic " : ""}${face.weight}`,
-      role,
-      apply: {
-        fontFamily: `"${face.family}"`,
-        fontStyle: face.style || "normal",
-        fontWeight: face.weight || "400",
-        ...(face.stretch ? { fontStretch: face.stretch } : {}),
-      },
-      family: face.family,
-    };
-  } catch (error) {
-    console.warn("Could not read OpenType metadata for", face.url, error);
-    return fallback();
-  }
-}
-function cssStyleFallbackLabel(face) {
-  const numeric = parseFloat(face.weight);
-  const weightNames = {
-    100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular",
-    450: "News", 500: "Medium", 600: "SemiBold", 700: "Bold",
-    800: "ExtraBold", 900: "Black",
-  };
-  let label = weightNames[numeric] || face.weight || "Regular";
-  if (face.style === "italic" && label !== "Italic") label += " Italic";
-  return label;
-}
-// Preload fonts so dropdown previews are ready when opened.
-function preloadFontFace(face) {
-  if (!("fonts" in document)) return Promise.resolve();
-  const styleKeyword = face.style === "italic" ? "italic " : "";
-  const family = /\s/.test(face.family) ? `"${face.family}"` : face.family;
-  return document.fonts.load(`${styleKeyword}${face.weight || "400"} 16px ${family}`)
-    .catch(error => {
-      console.warn("Could not preload font face", face.family, error);
-    });
-}
-async function discoverFontStyles(parserReady) {
-  const allFaces = facesFromStyleSheets();
-  familyVariantIndex = buildFamilyVariantIndex(allFaces.map(f => f.family));
-// Remove duplicate variant declarations.
-  const byCanonical = new Map();
-  allFaces.forEach(face => {
-    const key = canonicalFamily(face.family);
-    if (!byCanonical.has(key)) byCanonical.set(key, []);
-    byCanonical.get(key).push(face);
-  });
-  const seenFaceKeys = new Set();
-  const facesToProcess = [];
-  byCanonical.forEach(faces => {
-    const hasVariants = faces.some(f => familyVariantLabel(f.family));
-    faces.forEach(f => {
-      if (hasVariants && !familyVariantLabel(f.family)) return;
-      const faceKey = `${normalizeFamily(f.family)}|${f.style || "normal"}|${f.weight || "400"}`;
-      if (seenFaceKeys.has(faceKey)) return;
-      seenFaceKeys.add(faceKey);
-      facesToProcess.push(f);
-    });
-  });
-// Preload fonts and read metadata in parallel.
-  const [discovered] = await Promise.all([
-    Promise.all(facesToProcess.map(face => readFontFaceMetadata(face, parserReady))),
-    Promise.all(facesToProcess.map(preloadFontFace)),
-  ]);
-  discovered.forEach(entry => {
-    const key = canonicalFamily(entry.family);
-    if (!STYLE_CATALOG[key]) STYLE_CATALOG[key] = [];
-// Keep the first duplicate label.
-    const duplicate = STYLE_CATALOG[key].some(opt => opt.label === entry.label);
-    if (!duplicate) STYLE_CATALOG[key].push({ label: entry.label, role: entry.role, apply: entry.apply });
-  });
-  Object.values(STYLE_CATALOG).forEach(styles => {
-    styles.sort((a, b) => {
-      const aw = parseFloat(a.apply.fontWeight) || 400;
-      const bw = parseFloat(b.apply.fontWeight) || 400;
-      if (aw !== bw) return aw - bw;
-      if (a.apply.fontStyle !== b.apply.fontStyle) {
-        return a.apply.fontStyle === "normal" ? -1 : 1;
-      }
-      return a.label.localeCompare(b.label);
-    });
-  });
-}
- 
+Object.values(FAMILY_STYLES || {}).forEach(styles => {
+  (styles || []).forEach(({ apply }) => preloadStyleFace(apply));
+});
+// Use default features when no family-specific list exists.
 const DEFAULT_LABEL_BY_TAG = Object.fromEntries(OT_FEATURES.map(f => [f.tag, f.label]));
 // Normalises a feature entry to a tag and label.
 function normaliseFeatureEntry(entry) {
@@ -517,7 +366,6 @@ function normaliseFeatureEntry(entry) {
   }
   return { tag: entry.tag, label: entry.label || DEFAULT_LABEL_BY_TAG[entry.tag] || entry.tag };
 }
-// Use default features when no family-specific list exists.
 function featuresForFamily(family) {
   const entries = family && FAMILY_FEATURES[family]
     ? FAMILY_FEATURES[family]
@@ -994,79 +842,7 @@ function initFontEditor(root) {
     resetButton.blur();
   });
   updateFontControls();
-  root.addEventListener("fontstylesready", () => {
-    updateFontControls();
-  });
 }
-// Initialise all editors.
+// Initialise all editors. STYLE_CATALOG above is already fully built by
+// this point (synchronously, from FAMILY_STYLES) - no waiting needed.
 document.querySelectorAll(".fe-editor").forEach(initFontEditor);
-// Load the OpenType parser, with a fallback if it fails.
-function loadOpenTypeParser() {
-  return new Promise((resolve) => {
-    if (window.opentype) {
-      resolve(window.opentype);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js";
-    script.onload = () => resolve(window.opentype || null);
-    script.onerror = () => {
-      console.warn("OpenType parser could not be loaded; using CSS style fallbacks.");
-      resolve(null);
-    };
-    document.head.appendChild(script);
-  });
-}
-// Font discovery needs document.styleSheets to already reflect the font
-// <link> tags. Inline/parser-blocking scripts normally get this for
-// free (a script after a pending stylesheet waits for it), but that
-// guarantee breaks for async scripts or ones inserted by other JS - so
-// this waits explicitly instead of assuming it.
-function waitForStylesheets() {
-  const links = [...document.querySelectorAll('link[rel="stylesheet"]')];
-  return Promise.all(links.map(link => {
-    if (link.sheet) return Promise.resolve();
-    return new Promise(resolve => {
-      link.addEventListener("load", resolve, { once: true });
-      link.addEventListener("error", resolve, { once: true });
-    });
-  }));
-}
-// Guarantees each of `urls` is present as a loaded stylesheet link,
-// reusing one already on the page if it finds it (so it never double-
-// fetches something the page already linked) or creating it otherwise.
-// This removes any dependency on some other part of the page having
-// inserted - and by the right time - the stylesheets discovery needs;
-// some hosting/embed setups don't guarantee either, so this takes
-// ownership instead of assuming it.
-function ensureStylesheetsLoaded(urls) {
-  return Promise.all((urls || []).map(url => new Promise(resolve => {
-    let link = document.querySelector(`link[rel="stylesheet"][href="${url}"]`);
-    if (link && link.sheet) {
-      resolve();
-      return;
-    }
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.crossOrigin = "anonymous";
-      link.href = url;
-      document.head.appendChild(link);
-    }
-    link.addEventListener("load", resolve, { once: true });
-    link.addEventListener("error", resolve, { once: true });
-  })));
-}
-// Start parser loading alongside style discovery.
-const parserReady = loadOpenTypeParser();
-ensureStylesheetsLoaded(typeof FONT_STYLESHEET_URLS !== "undefined" ? FONT_STYLESHEET_URLS : [])
-  .then(() => waitForStylesheets())
-  .then(() => discoverFontStyles(parserReady))
-  .then(() => {
-    document.querySelectorAll(".fe-editor").forEach(root => {
-      root.dispatchEvent(new Event("fontstylesready"));
-    });
-  })
-  .catch(error => {
-    console.warn("Font style discovery failed; editors remain functional.", error);
-  });
