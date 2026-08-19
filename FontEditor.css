@@ -1,0 +1,485 @@
+
+ .fe-demo {
+    outline: none;
+  }
+  /* Fonts reserve descender space that unused text (all-caps headlines,
+     tightly-leaded display text) leaves as extra empty space below the
+     text - noticeably uneven at the large sizes/tight line-heights this
+     tool is often used to test. Trimming the line box to actual
+     cap-height/baseline instead of the font's full ascent/descent fixes
+     it. Chrome/Edge 133+ and Safari 18.2+ support this; unsupported
+     browsers just ignore it and keep today's behavior - safe with no
+     fallback needed.
+     Scoped to text:not(:has(p)) - standalone text blocks only, NEVER a
+     <p> itself or anything containing one. Paragraphs here have
+     margin: 0 (see .paraBlock below), so the gap between them is
+     entirely the leading this trims - applying it per-paragraph
+     removes that gap from both sides at once and runs them together. */
+  .fe-demo text:not(:has(p)) {
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
+  }
+  .fe-editor {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 0px;
+    font-family:"Leafy Sans";
+    font-weight: 400px;
+    font-size: 16px;
+  }
+ 
+input[type="range"] {
+  -webkit-appearance: none;  /* Override the default slider appearance. */
+  appearance: none;
+  width: 200px;
+  background: transparent;   /* No visible background by default. */
+}
+/* Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #888;
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #f0f0f0;
+  border-radius: 2px;
+}
+/* Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #b9b800;
+  margin-top: -5px;      /* Centre the thumb on the track. */
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #b9b800;
+  border: none;
+  cursor: pointer;
+}
+  .fe-controls-outer {
+    position: fixed;
+    inset: auto 0% 0%;
+    display: none;
+    justify-content: center;
+    opacity: 1;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: .2s;
+    z-index: 5;
+  }
+  .fe-controls-outer.visible {
+    opacity: 1;
+    display: flex;
+    transform: translateY(0);
+  }
+  /* Separate transform layer from .fe-controls-outer above - that one
+     handles the overall open/close slide, this one handles the
+     bottom-sheet peek/expand position and the keyboard-avoidance
+     offset, so neither has to fight the other over the same property.
+     Inert outside the narrow breakpoint (JS never sets a transform on
+     it there).
+     Also carries the background and pointer-events capture that used
+     to live on .fe-controls-outer above: transform never changes an
+     element's layout size, only where it paints, so the outer
+     container stays exactly as tall as this sheet's UNtransformed
+     (i.e. fully expanded) height regardless of the sheet's actual
+     on-screen position. Painting the background here instead means it
+     tracks wherever the sheet is actually sitting rather than always
+     covering that full, mostly-invisible height - and moving pointer-
+     events here too means the leftover transparent gap above a
+     collapsed sheet doesn't swallow clicks meant for the page under it. */
+  .fe-sheet {
+    width: 100%;
+    max-width: 1300px;
+    transition: transform .2s ease;
+    background: #333;
+    pointer-events: none;
+  }
+  .fe-controls-outer.visible .fe-sheet {
+    pointer-events: auto;
+  }
+  .fe-sheet-handle {
+    all: unset;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 8px 0 4px;
+    cursor: grab;
+    touch-action: none; /* Let JS handle the drag instead of page scroll. */
+  }
+  .fe-sheet-handle:active {
+    cursor: grabbing;
+  }
+  .fe-sheet-handle-grip {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #777;
+  }
+  @media (max-width: 960px) {
+    .fe-sheet-handle {
+      display: flex;
+    }
+  }
+  .fe-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 20px 20px 20px;
+    font-family: inherit;
+    font-weight: 400;
+    line-height: 1.2em;
+    font-size: 20 px;
+    color: #f0f0f0;
+    outline: none;
+    width: 100%;
+  }
+  .fe-ot-wrapper {
+    position: relative;
+    display: inline-block;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+  }
+  .fe-ot-button {
+    all: unset;  
+    border-radius: 5px;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    background-color:#555;
+    padding: 1px 15px 1px 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fe-ot-button.open .fe-dropdown-arrow {
+    transform: rotate(180deg);
+  }
+  .fe-ot-button:hover{
+       background-color:#b9b800;
+  }
+  .fe-reset-button {
+    all: unset; 
+    border-radius: 5px;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    background-color:#555;
+    padding: 1px 9px;
+    height: 22px; /* Fallback for browsers without 1lh support. */
+    height: 1lh;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .fe-reset-button:hover{
+      background-color:#b9b800;
+  }
+  .fe-sliders-toggle {
+    all: unset;
+    border-radius: 5px;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    background-color: #555;
+    padding: 1px 9px;
+    height: 22px; /* Fallback for browsers without 1lh support. */
+    height: 1lh;
+    cursor: pointer;
+    color: #f0f0f0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .fe-sliders-toggle:hover {
+    background-color: #b9b800;
+  }
+  .fe-sliders-toggle.active {
+    background-color: #b9b800;
+    color: #333;
+  }
+  /* Below the width where three 290px slider boxes plus gaps and the
+     panel's own padding no longer fit on one line (and would otherwise
+     wrap), hide that row behind the toggle button instead. Extra
+     specificity here (.fe-controls .fe-slider-row, not just
+     .fe-slider-row) is required to reliably beat .fe-control-row's own
+     display:flex, which is declared later in the stylesheet and would
+     otherwise win any same-specificity tie regardless of this media
+     query's condition. */
+  @media (max-width: 960px) {
+    .fe-sliders-toggle {
+      display: inline-flex;
+    }
+    .fe-controls .fe-slider-row {
+      display: none;
+    }
+    .fe-controls.sliders-open .fe-slider-row {
+      display: flex;
+    }
+  }
+  .fe-uppercase-button {
+    all: unset;
+    border-radius: 5px;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    background-color: #555;
+    padding: 1px 15px 1px 15px;
+    cursor: pointer;
+    color: #f0f0f0;
+  }
+  .fe-uppercase-button:hover {
+    background-color: #b9b800;
+  }
+  .fe-uppercase-button.active {
+    background-color: #b9b800;
+    color: #333;
+  }
+  .fe-align-group {
+    display: flex;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .fe-align-button {
+    all: unset;
+    background-color: #555;
+    padding: 1px 9px;
+    height: 22px; /* Fallback for browsers without 1lh support. */
+    height: 1lh;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f0f0f0;
+  }
+  .fe-align-button:hover {
+    background-color: #b9b800;
+  }
+  .fe-align-button.active {
+    background-color: #b9b800;
+    color: #333;
+  }
+  .fe-align-cycle-button {
+    all: unset;
+    background-color: #555;
+    padding: 1px 9px;
+    height: 22px; /* Fallback for browsers without 1lh support. */
+    height: 1lh;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #f0f0f0;
+    border-radius: 5px;
+  }
+  .fe-align-cycle-button:hover {
+    background-color: #b9b800;
+  }
+  @media (max-width: 960px) {
+    .fe-align-group {
+      display: none;
+    }
+    .fe-align-cycle-button {
+      display: flex;
+    }
+  }
+  .fe-control-row
+  {
+    display: flex;
+    flex-flow: wrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 13px;
+  }
+  .fe-slider-box{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width:290px;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    text-align: right;
+    background-color: #555;
+    padding: 1px 15px 1px 15px;
+    border-radius: 5px;
+  }
+  .fe-ot-popup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    min-width: 220px;
+    z-index: 10;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+  }
+  .fe-ot-popup.visible {
+    display: flex;
+  }
+  .fe-ot-popup label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    color: #333;
+  }
+  .fe-ot-popup label span.tag {
+    opacity: .5;
+    margin-left: auto;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+  }
+/* Custom dropdowns are used for consistent font previews. */
+  .fe-dropdown-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    line-height: 24px;
+    text-align: left;
+    
+  }
+  .fe-dropdown {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .fe-dropdown-button {
+    all: unset;
+    border-radius: 5px;
+    background-color: #f0f0f0;
+    color: #333;
+    padding: 1px 15px 1px 15px;
+    min-height: 40px;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 24px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 150px;
+  }
+  .fe-dropdown-button:hover {
+    background-color: #b9b800;
+    color: #f0f0f0;
+  }
+  /* The Sample dropdown reuses the same .fe-dropdown-button markup as
+     Font/Style, but should look and size like the other buttons
+     (dark background, short height) rather than Font/Style's larger
+     light-colored look. */
+  .fe-sample-dropdown .fe-dropdown-button {
+    background-color: #555;
+    color: #f0f0f0;
+    padding: 1px 9px;
+    min-height: 0;
+    height: 22px; /* Fallback for browsers without 1lh support. */
+    height: 1lh;
+    font-size: 16px;
+    line-height: 1.2em;
+    min-width: 0;
+  }
+  .fe-sample-dropdown .fe-dropdown-button:hover {
+    background-color: #b9b800;
+    color: #f0f0f0;
+  }
+  .fe-sample-dropdown .fe-dropdown-button.open {
+    background-color: #b9b800;
+    color: #333;
+  }
+  .fe-sample-dropdown .fe-dropdown-row {
+    font-size: 16px;
+    line-height: 1.2em;
+  }
+  .fe-dropdown-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    font-size: inherit;
+  }
+  .fe-dropdown-arrow {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: transform .15s;
+  }
+  .fe-dropdown-button.open .fe-dropdown-arrow {
+    transform: rotate(180deg);
+  }
+  .fe-dropdown-popup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 8px;
+    padding: 6px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 260px;
+    overflow-y: auto;
+    min-width: 220px;
+    z-index: 10;
+  }
+  .fe-dropdown-popup.visible {
+    display: flex;
+  }
+  .fe-dropdown-row {
+    all: unset;
+    display: block;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #333;
+     font-size: 24px;
+    line-height: 24px;
+    text-align: left;
+  }
+  .fe-dropdown-row:hover {
+    background: #eee;
+  }
+  .fe-dropdown-row.selected {
+    background: #b9b800;
+    color: #f0f0f0;
+  }
