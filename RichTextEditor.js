@@ -421,10 +421,29 @@ function featuresForFamily(family) {
     : OT_FEATURES.map(f => f.tag);
   return entries.map(normaliseFeatureEntry);
 }
+const ALIGN_ICONS = {
+  left: '<rect x="1" y="1" width="18" height="2"/><rect x="1" y="6" width="12" height="2"/><rect x="1" y="11" width="15" height="2"/>',
+  center: '<rect x="1" y="1" width="18" height="2"/><rect x="4" y="6" width="12" height="2"/><rect x="2.5" y="11" width="15" height="2"/>',
+  right: '<rect x="1" y="1" width="18" height="2"/><rect x="7" y="6" width="12" height="2"/><rect x="4" y="11" width="15" height="2"/>',
+  justify: '<rect x="1" y="1" width="18" height="2"/><rect x="1" y="6" width="18" height="2"/><rect x="1" y="11" width="18" height="2"/>',
+};
+// The order the mobile cycle button steps through on each click.
+const ALIGN_ORDER = Object.keys(ALIGN_ICONS);
 // Build one editor's controls.
 function buildControls(root) {
   const controlsOuter = document.createElement("div");
   controlsOuter.className = "fe-controls-outer";
+  const sheet = document.createElement("div");
+  sheet.className = "fe-sheet";
+  const sheetHandle = document.createElement("button");
+  sheetHandle.type = "button";
+  sheetHandle.className = "fe-sheet-handle";
+  sheetHandle.title = "Show controls";
+  sheetHandle.setAttribute("aria-expanded", "false");
+  const sheetHandleGrip = document.createElement("span");
+  sheetHandleGrip.className = "fe-sheet-handle-grip";
+  sheetHandle.appendChild(sheetHandleGrip);
+  sheet.appendChild(sheetHandle);
   const controls = document.createElement("div");
   controls.className = "fe-controls";
 // Keep background clicks inside the controls panel.
@@ -485,30 +504,21 @@ function buildControls(root) {
   familyDropdown.setOptions(FAMILY_OPTIONS);
   const fontField = document.createElement("div");
   fontField.className = "fe-dropdown-field";
-  fontField.appendChild(document.createTextNode("Font"));
   fontField.appendChild(familyDropdown.element);
   menuRow.appendChild(fontField);
   const styleDropdown = createFontDropdown("fe-style-dropdown");
   const styleField = document.createElement("div");
   styleField.className = "fe-dropdown-field";
-  styleField.appendChild(document.createTextNode("Style"));
   styleField.appendChild(styleDropdown.element);
   menuRow.appendChild(styleField);
   const sampleDropdown = createFontDropdown("fe-sample-dropdown");
   const sampleField = document.createElement("div");
   sampleField.className = "fe-dropdown-field";
-  sampleField.appendChild(document.createTextNode("Sample"));
   sampleField.appendChild(sampleDropdown.element);
   menuRow.appendChild(sampleField);
-  const ALIGN_ICONS = {
-    left: '<rect x="1" y="1" width="18" height="2"/><rect x="1" y="6" width="12" height="2"/><rect x="1" y="11" width="15" height="2"/>',
-    center: '<rect x="1" y="1" width="18" height="2"/><rect x="4" y="6" width="12" height="2"/><rect x="2.5" y="11" width="15" height="2"/>',
-    right: '<rect x="1" y="1" width="18" height="2"/><rect x="7" y="6" width="12" height="2"/><rect x="4" y="11" width="15" height="2"/>',
-    justify: '<rect x="1" y="1" width="18" height="2"/><rect x="1" y="6" width="18" height="2"/><rect x="1" y="11" width="18" height="2"/>',
-  };
   const alignGroup = document.createElement("div");
   alignGroup.className = "fe-align-group";
-  const alignButtons = ["left", "center", "right", "justify"].map(align => {
+  const alignButtons = ALIGN_ORDER.map(align => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "fe-align-button";
@@ -519,6 +529,14 @@ function buildControls(root) {
     return btn;
   });
   menuRow.appendChild(alignGroup);
+// Mobile-only: one button showing the current alignment, cycling
+// left -> center -> right -> justify -> left on each click, instead of
+// the four separate buttons above (hidden below the same breakpoint).
+  const alignCycleButton = document.createElement("button");
+  alignCycleButton.type = "button";
+  alignCycleButton.className = "fe-align-cycle-button";
+  alignCycleButton.title = "Alignment";
+  menuRow.appendChild(alignCycleButton);
   const uppercaseButton = document.createElement("button");
   uppercaseButton.type = "button";
   uppercaseButton.className = "fe-uppercase-button";
@@ -552,11 +570,12 @@ function buildControls(root) {
     '</svg>';
   menuRow.appendChild(resetButton);
   controls.appendChild(menuRow);
-  controlsOuter.appendChild(controls);
+  sheet.appendChild(controls);
+  controlsOuter.appendChild(sheet);
   root.appendChild(controlsOuter);
   return {
-    controls, controlsOuter, slider, slider2, slider3, familyDropdown, styleDropdown,
-    resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, uppercaseButton,
+    controls, controlsOuter, sheet, sheetHandle, slider, slider2, slider3, familyDropdown, styleDropdown,
+    resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, alignCycleButton, uppercaseButton,
     slidersToggle, sampleDropdown, sampleField,
   };
 }
@@ -565,8 +584,8 @@ function initFontEditor(root) {
   const demo = root.querySelector(".fe-demo");
   demo.spellcheck = false;
   const {
-    controls, controlsOuter, slider, slider2, slider3, familyDropdown, styleDropdown,
-    resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, uppercaseButton,
+    controls, controlsOuter, sheet, sheetHandle, slider, slider2, slider3, familyDropdown, styleDropdown,
+    resetButton, otFeaturesButton, otFeaturesPopup, alignButtons, alignCycleButton, uppercaseButton,
     slidersToggle, sampleDropdown, sampleField,
   } = buildControls(root);
   const initialDemoHTML = demo.innerHTML;
@@ -711,6 +730,11 @@ function initFontEditor(root) {
     alignButtons.forEach(btn => {
       btn.classList.toggle("active", btn.dataset.align === current);
     });
+// Mobile cycle button: shows whichever alignment is current, defaulting
+// to "left" when ambiguous (mixed blocks) rather than showing nothing.
+    const cycleAlign = current || "left";
+    alignCycleButton.dataset.align = cycleAlign;
+    alignCycleButton.innerHTML = `<svg viewBox="0 0 20 14" width="20" height="14" fill="currentColor">${ALIGN_ICONS[cycleAlign]}</svg>`;
   }
 // Highlights uppercase only when all runs agree.
   function updateUppercaseControl() {
@@ -844,8 +868,93 @@ function initFontEditor(root) {
       updateFontControls();
     }
   });
+// Bottom-sheet peek/expand state, only meaningful within the narrow
+// breakpoint (see .fe-sheet-handle's media query - it's display:none
+// outside it, so nothing here is reachable on wider screens). Kept as
+// a transform on .fe-sheet, a layer separate from .fe-controls-outer's
+// own open/close transform, so the two never fight over one property.
+  let sheetExpanded = false;
+  let keyboardOffset = 0;
+  function isNarrow() {
+    return window.matchMedia("(max-width: 960px)").matches;
+  }
+  function collapsedOffset() {
+    return Math.max(0, sheet.offsetHeight - sheetHandle.offsetHeight);
+  }
+  function updateSheetTransform() {
+    if (!isNarrow()) {
+      sheet.style.transform = "";
+      return;
+    }
+    const peek = sheetExpanded ? 0 : collapsedOffset();
+    sheet.style.transform = `translateY(${peek - keyboardOffset}px)`;
+  }
+  function setSheetExpanded(expanded) {
+    sheetExpanded = expanded;
+    sheetHandle.setAttribute("aria-expanded", String(expanded));
+    updateSheetTransform();
+  }
+  let dragStartY = null;
+  let dragStartOffset = 0;
+  sheetHandle.addEventListener("pointerdown", (e) => {
+    if (!isNarrow()) return;
+    dragStartY = e.clientY;
+    dragStartOffset = sheetExpanded ? 0 : collapsedOffset();
+// No transition while actively dragging - it should track the finger
+// directly, not ease toward it.
+    sheet.style.transition = "none";
+    sheetHandle.setPointerCapture(e.pointerId);
+  });
+  sheetHandle.addEventListener("pointermove", (e) => {
+    if (dragStartY === null) return;
+    const max = collapsedOffset();
+    const next = Math.min(max, Math.max(0, dragStartOffset + (e.clientY - dragStartY)));
+    sheet.style.transform = `translateY(${next - keyboardOffset}px)`;
+  });
+  sheetHandle.addEventListener("pointerup", (e) => {
+    if (dragStartY === null) return;
+    const delta = e.clientY - dragStartY;
+    dragStartY = null;
+    sheet.style.transition = "";
+// A near-zero-distance pointerup is a tap, not a drag - toggle rather
+// than snap-to-nearest, since snapping-to-nearest on a tap would just
+// settle back to whatever state it already was in.
+    if (Math.abs(delta) < 5) {
+      setSheetExpanded(!sheetExpanded);
+      return;
+    }
+    const max = collapsedOffset();
+    const draggedOffset = Math.min(max, Math.max(0, dragStartOffset + delta));
+    setSheetExpanded(draggedOffset < max / 2);
+  });
+  sheetHandle.addEventListener("pointercancel", () => {
+    dragStartY = null;
+    sheet.style.transition = "";
+    updateSheetTransform();
+  });
+// Keeps the sheet above the on-screen keyboard instead of sliding under
+// it. visualViewport is what's broadly supported for this (including
+// iOS Safari) - the more purpose-built VirtualKeyboard API exists but
+// is Chromium-only with no sign of Safari/Firefox shipping it.
+  function updateKeyboardOffset() {
+    if (!window.visualViewport) return;
+    const vv = window.visualViewport;
+    keyboardOffset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    updateSheetTransform();
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateKeyboardOffset);
+    window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+  }
   root.addEventListener("focusin", () => {
+    const wasVisible = controlsOuter.classList.contains("visible");
     controlsOuter.classList.add("visible");
+// Only reset to collapsed on a genuine fresh open, not on every
+// internal focus move (e.g. clicking a dropdown) while already open -
+// otherwise using the panel would keep yanking itself shut.
+    if (!wasVisible && isNarrow()) {
+      setSheetExpanded(false);
+    }
   });
   root.addEventListener("focusout", () => {
     requestAnimationFrame(() => {
@@ -854,6 +963,21 @@ function initFontEditor(root) {
       }
     });
   });
+// The panel is fixed-position, so it would otherwise keep floating on
+// screen even once its own editor has scrolled fully out of view.
+// Also blurs whatever's focused - closing only hides the panel, it
+// doesn't relinquish focus, and focusin only fires on an actual focus
+// transition, so without this a later click back into already-focused
+// text would never reopen it.
+  const visibilityObserver = new IntersectionObserver(([entry]) => {
+    if (!entry.isIntersecting) {
+      controlsOuter.classList.remove("visible");
+      if (root.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+    }
+  }, { threshold: 0 });
+  visibilityObserver.observe(demo);
   slider.addEventListener("input", () => {
     if (!selectedSpan) {
       selectedSpan = wrapAll(activeContainer);
@@ -926,6 +1050,15 @@ function initFontEditor(root) {
       });
       updateAlignControls();
     });
+  });
+  alignCycleButton.addEventListener("click", () => {
+    const current = alignCycleButton.dataset.align || "left";
+    const next = ALIGN_ORDER[(ALIGN_ORDER.indexOf(current) + 1) % ALIGN_ORDER.length];
+    const target = selectedSpan || activeContainer;
+    collectBlocks(target, demo).forEach(block => {
+      block.style.textAlign = next;
+    });
+    updateAlignControls();
   });
   uppercaseButton.addEventListener("click", () => {
     if (!selectedSpan) {
