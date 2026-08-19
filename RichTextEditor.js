@@ -969,18 +969,25 @@ function initFontEditor(root) {
   }, { threshold: 0 });
   visibilityObserver.observe(demo);
   slider.addEventListener("input", () => {
-    if (!selectedSpan) {
-      selectedSpan = wrapAll(activeContainer);
-    }
-    flattenProperty(selectedSpan, "font-size");
-    setTargetStyle(selectedSpan, "fontSize", slider.value + "px");
+    // With no text selection, apply typography to the actual block/group
+    // rather than wrapping its contents in an extra span. This is important
+    // when the original font-size is responsive (vw/clamp): the block is the
+    // element whose existing em line-height is based on that font-size.
+    const target = selectedSpan || activeContainer;
+    if (!target) return;
+
+    flattenProperty(target, "font-size");
+    setTargetStyle(target, "fontSize", slider.value + "px");
     updateFontControls();
   });
   slider2.addEventListener("input", () => {
-    if (!selectedSpan) {
-      selectedSpan = wrapAll(activeContainer);
-    }
-    applyEmValuePerRun(selectedSpan, "line-height", slider2.value);
+    const target = selectedSpan || activeContainer;
+    if (!target) return;
+
+    // Keep line-height as an em value. When no selection exists, applying it
+    // to the block itself keeps its em reference tied to that block's
+    // responsive/current font-size.
+    applyEmValuePerRun(target, "line-height", slider2.value);
     updateFontControls();
   });
   slider3.addEventListener("input", () => {
