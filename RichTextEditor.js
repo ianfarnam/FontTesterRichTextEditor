@@ -440,10 +440,10 @@ function buildControls(root) {
   sheetHandle.className = "fe-sheet-handle";
   sheetHandle.title = "Show controls";
   sheetHandle.setAttribute("aria-expanded", "false");
-  const sheetHandleGrip = document.createElement("span");
-  sheetHandleGrip.className = "fe-sheet-handle-grip";
-  sheetHandle.appendChild(sheetHandleGrip);
-  sheet.appendChild(sheetHandle);
+  const sheetHandleArrow = document.createElement("span");
+  sheetHandleArrow.className = "fe-sheet-handle-arrow";
+  sheetHandleArrow.innerHTML = '<svg viewBox="0 0 12 8" width="12" height="8" fill="currentColor"><path d="M1 1l5 5 5-5"/></svg>';
+  sheetHandle.appendChild(sheetHandleArrow);
   const controls = document.createElement("div");
   controls.className = "fe-controls";
 // Keep background clicks inside the controls panel.
@@ -571,6 +571,7 @@ function buildControls(root) {
   menuRow.appendChild(resetButton);
   controls.appendChild(menuRow);
   sheet.appendChild(controls);
+  sheet.appendChild(sheetHandle);
   controlsOuter.appendChild(sheet);
   root.appendChild(controlsOuter);
   return {
@@ -868,15 +869,18 @@ function initFontEditor(root) {
       updateFontControls();
     }
   });
-// Bottom-sheet peek/expand state, only meaningful within the narrow
+// Top-sheet peek/expand state, only meaningful within the narrow
 // breakpoint (see .fe-sheet-handle's media query - it's display:none
 // outside it, so nothing here is reachable on wider screens). Kept as
 // a transform on .fe-sheet, a layer separate from .fe-controls-outer's
 // own open/close transform, so the two never fight over one property.
+// The sheet is top-anchored and the handle is its LAST child (see
+// buildControls), so collapsing means shifting UP (negative) to hide
+// everything ABOVE the handle, leaving just the handle visible at the
+// top edge - the mirror image of a typical bottom sheet.
   let sheetExpanded = false;
-  let keyboardOffset = 0;
   function isNarrow() {
-    return window.matchMedia("(max-width: 960px)").matches;
+    return window.matchMedia("(max-width: 767px)").matches;
   }
   function collapsedOffset() {
     return Math.max(0, sheet.offsetHeight - sheetHandle.offsetHeight);
@@ -886,12 +890,12 @@ function initFontEditor(root) {
       sheet.style.transform = "";
       return;
     }
-    const peek = sheetExpanded ? 0 : collapsedOffset();
-    sheet.style.transform = `translateY(${peek - keyboardOffset}px)`;
+    sheet.style.transform = `translateY(${sheetExpanded ? 0 : -collapsedOffset()}px)`;
   }
   function setSheetExpanded(expanded) {
     sheetExpanded = expanded;
     sheetHandle.setAttribute("aria-expanded", String(expanded));
+    sheetHandle.classList.toggle("expanded", expanded);
     updateSheetTransform();
   }
   let dragStartY = null;
@@ -899,7 +903,7 @@ function initFontEditor(root) {
   sheetHandle.addEventListener("pointerdown", (e) => {
     if (!isNarrow()) return;
     dragStartY = e.clientY;
-    dragStartOffset = sheetExpanded ? 0 : collapsedOffset();
+    dragStartOffset = sheetExpanded ? 0 : -collapsedOffset();
 // No transition while actively dragging - it should track the finger
 // directly, not ease toward it.
     sheet.style.transition = "none";
@@ -908,8 +912,8 @@ function initFontEditor(root) {
   sheetHandle.addEventListener("pointermove", (e) => {
     if (dragStartY === null) return;
     const max = collapsedOffset();
-    const next = Math.min(max, Math.max(0, dragStartOffset + (e.clientY - dragStartY)));
-    sheet.style.transform = `translateY(${next - keyboardOffset}px)`;
+    const next = Math.min(0, Math.max(-max, dragStartOffset + (e.clientY - dragStartY)));
+    sheet.style.transform = `translateY(${next}px)`;
   });
   sheetHandle.addEventListener("pointerup", (e) => {
     if (dragStartY === null) return;
@@ -924,28 +928,14 @@ function initFontEditor(root) {
       return;
     }
     const max = collapsedOffset();
-    const draggedOffset = Math.min(max, Math.max(0, dragStartOffset + delta));
-    setSheetExpanded(draggedOffset < max / 2);
+    const draggedOffset = Math.min(0, Math.max(-max, dragStartOffset + delta));
+    setSheetExpanded(draggedOffset > -max / 2);
   });
   sheetHandle.addEventListener("pointercancel", () => {
     dragStartY = null;
     sheet.style.transition = "";
     updateSheetTransform();
   });
-// Keeps the sheet above the on-screen keyboard instead of sliding under
-// it. visualViewport is what's broadly supported for this (including
-// iOS Safari) - the more purpose-built VirtualKeyboard API exists but
-// is Chromium-only with no sign of Safari/Firefox shipping it.
-  function updateKeyboardOffset() {
-    if (!window.visualViewport) return;
-    const vv = window.visualViewport;
-    keyboardOffset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    updateSheetTransform();
-  }
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", updateKeyboardOffset);
-    window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
-  }
   root.addEventListener("focusin", () => {
     const wasVisible = controlsOuter.classList.contains("visible");
     controlsOuter.classList.add("visible");
