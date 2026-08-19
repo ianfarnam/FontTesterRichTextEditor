@@ -1,5 +1,4 @@
-
- .fe-demo {
+.fe-demo {
     outline: none;
   }
   /* Fonts reserve descender space that unused text (all-caps headlines,
@@ -74,37 +73,32 @@ input[type="range"]::-moz-range-thumb {
     transform: translateY(10px);
     transition: .2s;
     z-index: 5;
+    background: #333;
   }
   .fe-controls-outer.visible {
     opacity: 1;
     display: flex;
+    pointer-events: auto;
     transform: translateY(0);
   }
   /* Separate transform layer from .fe-controls-outer above - that one
      handles the overall open/close slide, this one handles the
-     bottom-sheet peek/expand position and the keyboard-avoidance
-     offset, so neither has to fight the other over the same property.
-     Inert outside the narrow breakpoint (JS never sets a transform on
-     it there).
-     Also carries the background and pointer-events capture that used
-     to live on .fe-controls-outer above: transform never changes an
-     element's layout size, only where it paints, so the outer
-     container stays exactly as tall as this sheet's UNtransformed
-     (i.e. fully expanded) height regardless of the sheet's actual
-     on-screen position. Painting the background here instead means it
-     tracks wherever the sheet is actually sitting rather than always
-     covering that full, mostly-invisible height - and moving pointer-
-     events here too means the leftover transparent gap above a
-     collapsed sheet doesn't swallow clicks meant for the page under it. */
+     bottom-sheet peek/expand position, so neither has to fight the
+     other over the same property. Inert outside the narrow breakpoint
+     (JS never sets a transform on it there).
+     Background/pointer-events are handled differently per breakpoint:
+     on desktop there's no peek/collapse at all, so .fe-controls-outer
+     above (full viewport width) owns both, same as before this was a
+     sheet. Below the breakpoint they move to .fe-sheet instead (see
+     media query below) - .fe-sheet is the element that actually moves,
+     and .fe-controls-outer stays exactly as tall as the sheet's
+     UNtransformed (fully expanded) height regardless of the sheet's
+     real on-screen position, since transform never changes layout
+     size, only where something paints. */
   .fe-sheet {
     width: 100%;
     max-width: 1300px;
     transition: transform .2s ease;
-    background: #333;
-    pointer-events: none;
-  }
-  .fe-controls-outer.visible .fe-sheet {
-    pointer-events: auto;
   }
   .fe-sheet-handle {
     all: unset;
@@ -115,26 +109,59 @@ input[type="range"]::-moz-range-thumb {
     padding: 8px 0 4px;
     cursor: grab;
     touch-action: none; /* Let JS handle the drag instead of page scroll. */
+    color: #f0f0f0;
   }
   .fe-sheet-handle:active {
     cursor: grabbing;
   }
-  .fe-sheet-handle-grip {
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: #777;
+  .fe-sheet-handle-arrow {
+    display: inline-flex;
+    align-items: center;
+    transition: transform .15s;
   }
-  @media (max-width: 960px) {
+  .fe-sheet-handle.expanded .fe-sheet-handle-arrow {
+    transform: rotate(180deg);
+  }
+  @media (max-width: 767px) {
     .fe-sheet-handle {
       display: flex;
     }
+    /* Mobile: anchor to the top instead of the bottom, and hand off
+       background/pointer-events to .fe-sheet so they track its actual
+       (peek/expand-transformed) position - see the long comment above
+       .fe-sheet for why that has to happen on the moving element
+       rather than this always-full-height container. Anchoring to the
+       top sidesteps the on-screen keyboard entirely (it only ever
+       covers the bottom), which is also why there's no keyboard-
+       tracking JS to worry about here - the accessory bar many mobile
+       keyboards show above themselves (autofill suggestions, a
+       "Done" button, etc.) doesn't report its own height reliably,
+       which made bottom-anchored positioning hard to predict. */
+    .fe-controls-outer {
+      inset: 0% 0% auto;
+      transform: translateY(-10px);
+      background: none;
+    }
+    .fe-controls-outer.visible {
+      pointer-events: none;
+    }
+    .fe-sheet {
+      background: #333;
+      pointer-events: none;
+    }
+    .fe-controls-outer.visible .fe-sheet {
+      pointer-events: auto;
+    }
+    
+    
   }
+  
+  
   .fe-controls {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 8px 20px 20px 20px;
+    padding: 20px;
     font-family: inherit;
     font-weight: 400;
     line-height: 1.2em;
@@ -142,6 +169,11 @@ input[type="range"]::-moz-range-thumb {
     color: #f0f0f0;
     outline: none;
     width: 100%;
+  }
+  @media (max-width: 767px) {
+    .fe-controls {
+      padding-bottom: 0px;
+    }
   }
   .fe-ot-wrapper {
     position: relative;
@@ -222,7 +254,7 @@ input[type="range"]::-moz-range-thumb {
      display:flex, which is declared later in the stylesheet and would
      otherwise win any same-specificity tie regardless of this media
      query's condition. */
-  @media (max-width: 960px) {
+  @media (max-width: 990px) {
     .fe-sliders-toggle {
       display: inline-flex;
     }
@@ -292,7 +324,7 @@ input[type="range"]::-moz-range-thumb {
   .fe-align-cycle-button:hover {
     background-color: #b9b800;
   }
-  @media (max-width: 960px) {
+  @media (max-width: 767px) {
     .fe-align-group {
       display: none;
     }
@@ -464,6 +496,20 @@ input[type="range"]::-moz-range-thumb {
   }
   .fe-dropdown-popup.visible {
     display: flex;
+  }
+  /* The panel is top-anchored on mobile (see the earlier media query),
+     so a popup opening upward from it would push off the top of the
+     screen instead of appearing over visible content - open downward
+     there instead. Desktop is unaffected; the panel is bottom-anchored
+     there, where opening upward is correct. */
+  @media (max-width: 767px) {
+    .fe-ot-popup,
+    .fe-dropdown-popup {
+      bottom: auto;
+      top: 100%;
+      margin-bottom: 0;
+      margin-top: 8px;
+    }
   }
   .fe-dropdown-row {
     all: unset;
