@@ -531,7 +531,7 @@ function buildControls(root) {
   otFeaturesButton.type = "button";
   otFeaturesButton.className = "fe-ot-button";
   const otFeaturesLabel = document.createElement("span");
-  otFeaturesLabel.textContent = "OpenType Features";
+  otFeaturesLabel.textContent = "Features";
   const otFeaturesArrow = document.createElement("span");
   otFeaturesArrow.className = "fe-dropdown-arrow";
   otFeaturesArrow.setAttribute("aria-hidden", "true");
