@@ -440,6 +440,9 @@ function buildControls(root) {
   sheetHandle.className = "fe-sheet-handle";
   sheetHandle.title = "Show controls";
   sheetHandle.setAttribute("aria-expanded", "false");
+  const sheetHandleLabel = document.createElement("span");
+  sheetHandleLabel.textContent = "Controls";
+  sheetHandle.appendChild(sheetHandleLabel);
   const sheetHandleArrow = document.createElement("span");
   sheetHandleArrow.className = "fe-sheet-handle-arrow";
   sheetHandleArrow.innerHTML = '<svg viewBox="0 0 12 8" width="12" height="8" fill="currentColor"><path d="M1 1l5 5 5-5"/></svg>';
@@ -892,49 +895,49 @@ function initFontEditor(root) {
     }
     sheet.style.transform = `translateY(${sheetExpanded ? 0 : -collapsedOffset()}px)`;
   }
+// Reserves extra scroll room at whichever edge the fixed panel
+// currently covers, so content pinned behind it isn't permanently
+// stuck out of view - a fixed element covers page content without
+// making the page any taller/scrollable to compensate, so without
+// this there'd be no way to scroll that content into view at all.
+// Desktop: panel is bottom-anchored and always shown at full height
+// when open (no collapse state there) - bumperbottom matches that.
+// Mobile: panel is top-anchored, and how much it currently covers
+// depends on collapsed (just the handle) vs expanded (the full sheet
+// minus the tab, since the tab is a permanent fixture either way and
+// isn't itself something that needs scroll-compensation) - collapsedOffset()
+// (sheet height minus handle height) happens to be exactly that value
+// too, despite the name being about the collapse transform.
+  const bumperTop = document.querySelector(".bumpertop");
+  const bumperBottom = document.querySelector(".bumperbottom");
+  function updateBumpers() {
+    if (!bumperTop && !bumperBottom) return;
+    const visible = controlsOuter.classList.contains("visible");
+    const narrow = isNarrow();
+    if (bumperTop) {
+// Only the expanded controls need compensating for - the tab alone
+// (collapsed) is an acceptable overlap, not something that should
+// push page content down.
+      bumperTop.style.height = (visible && narrow && sheetExpanded)
+        ? `${collapsedOffset()}px`
+        : "0px";
+    }
+    if (bumperBottom) {
+      bumperBottom.style.height = (visible && !narrow)
+        ? `${controlsOuter.offsetHeight}px`
+        : "0px";
+    }
+  }
   function setSheetExpanded(expanded) {
     sheetExpanded = expanded;
     sheetHandle.setAttribute("aria-expanded", String(expanded));
     sheetHandle.classList.toggle("expanded", expanded);
     updateSheetTransform();
+    updateBumpers();
   }
-  let dragStartY = null;
-  let dragStartOffset = 0;
-  sheetHandle.addEventListener("pointerdown", (e) => {
+  sheetHandle.addEventListener("click", () => {
     if (!isNarrow()) return;
-    dragStartY = e.clientY;
-    dragStartOffset = sheetExpanded ? 0 : -collapsedOffset();
-// No transition while actively dragging - it should track the finger
-// directly, not ease toward it.
-    sheet.style.transition = "none";
-    sheetHandle.setPointerCapture(e.pointerId);
-  });
-  sheetHandle.addEventListener("pointermove", (e) => {
-    if (dragStartY === null) return;
-    const max = collapsedOffset();
-    const next = Math.min(0, Math.max(-max, dragStartOffset + (e.clientY - dragStartY)));
-    sheet.style.transform = `translateY(${next}px)`;
-  });
-  sheetHandle.addEventListener("pointerup", (e) => {
-    if (dragStartY === null) return;
-    const delta = e.clientY - dragStartY;
-    dragStartY = null;
-    sheet.style.transition = "";
-// A near-zero-distance pointerup is a tap, not a drag - toggle rather
-// than snap-to-nearest, since snapping-to-nearest on a tap would just
-// settle back to whatever state it already was in.
-    if (Math.abs(delta) < 5) {
-      setSheetExpanded(!sheetExpanded);
-      return;
-    }
-    const max = collapsedOffset();
-    const draggedOffset = Math.min(0, Math.max(-max, dragStartOffset + delta));
-    setSheetExpanded(draggedOffset > -max / 2);
-  });
-  sheetHandle.addEventListener("pointercancel", () => {
-    dragStartY = null;
-    sheet.style.transition = "";
-    updateSheetTransform();
+    setSheetExpanded(!sheetExpanded);
   });
   root.addEventListener("focusin", () => {
     const wasVisible = controlsOuter.classList.contains("visible");
@@ -943,13 +946,30 @@ function initFontEditor(root) {
 // internal focus move (e.g. clicking a dropdown) while already open -
 // otherwise using the panel would keep yanking itself shut.
     if (!wasVisible && isNarrow()) {
+// The very first time this runs, the sheet's transform goes from
+// never-set (visually the same as fully expanded) to the collapsed
+// offset - a real change, so the transition below would animate it
+// and it'd visibly open halfway before settling. Every later open
+// starts from that same collapsed value already, so nothing animates
+// there. Suppress it just for this first snap: disable the transition,
+// force a reflow so that takes effect before the transform below
+// changes, then restore it on the next frame (rather than the same
+// synchronous task) for extra certainty the suppressed state has
+// actually been committed before transitions are re-enabled.
+      sheet.style.transition = "none";
+      void sheet.offsetHeight;
       setSheetExpanded(false);
+      requestAnimationFrame(() => {
+        sheet.style.transition = "";
+      });
     }
+    updateBumpers();
   });
   root.addEventListener("focusout", () => {
     requestAnimationFrame(() => {
       if (!root.contains(document.activeElement)) {
         controlsOuter.classList.remove("visible");
+        updateBumpers();
       }
     });
   });
@@ -961,13 +981,52 @@ function initFontEditor(root) {
 // text would never reopen it.
   const visibilityObserver = new IntersectionObserver(([entry]) => {
     if (!entry.isIntersecting) {
-      controlsOuter.classList.remove("visible");
-      if (root.contains(document.activeElement)) {
-        document.activeElement.blur();
-      }
+// Re-check after a short delay rather than closing on this single
+// snapshot - a transient layout shift (e.g. the browser's own
+// scroll-into-view behavior when focusing a contenteditable) can
+// momentarily report zero intersection even though the editor settles
+// right back into view a moment later, and closing on that blip pops
+// the panel open then shut again.
+      setTimeout(() => {
+        const rect = demo.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const stillOffscreen = rect.bottom <= 0 || rect.top >= viewportHeight;
+        if (!stillOffscreen) return;
+        controlsOuter.classList.remove("visible");
+        if (root.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+        updateBumpers();
+      }, 150);
     }
   }, { threshold: 0 });
   visibilityObserver.observe(demo);
+// Keeps the bumpers correct across viewport/orientation changes too -
+// e.g. resizing past the breakpoint, or the panel's own natural height
+// changing, while it's open.
+  window.addEventListener("resize", updateBumpers);
+// .fe-controls inherits the page's webfont. If a click opens the panel
+// before that font has finished loading, the sheet/handle heights get
+// measured against fallback-font metrics - once the real font loads
+// and reflows the text, those measurements go stale and the collapsed
+// position no longer lines up with the tab's actual height, leaving
+// the panel visibly misaligned. Re-syncing once fonts settle fixes
+// that, but by this point sheet.style.transition is back to its
+// normal value, so without suppressing it here too, any actual change
+// in the corrected heights would visibly animate instead of snapping
+// silently into place - the opposite of what a background correction
+// like this should look like.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      sheet.style.transition = "none";
+      void sheet.offsetHeight;
+      updateSheetTransform();
+      updateBumpers();
+      requestAnimationFrame(() => {
+        sheet.style.transition = "";
+      });
+    });
+  }
   slider.addEventListener("input", () => {
     // With no text selection, apply typography to the actual block/group
     // rather than wrapping its contents in an extra span. This is important
@@ -1072,6 +1131,10 @@ function initFontEditor(root) {
     controls.classList.toggle("sliders-open", open);
     slidersToggle.classList.toggle("active", open);
     slidersToggle.setAttribute("aria-expanded", String(open));
+// The sliders row toggling changes .fe-controls' natural height, which
+// the expanded bumpertop tracks - without this it stayed stale until
+// something else (e.g. refocusing the text) happened to refresh it.
+    updateBumpers();
   });
   resetButton.addEventListener("click", () => {
     demo.innerHTML = initialDemoHTML;
