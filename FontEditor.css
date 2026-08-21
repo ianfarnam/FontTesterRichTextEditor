@@ -1,19 +1,8 @@
-.fe-demo {
+<style>
+ .fe-demo {
     outline: none;
   }
-  /* Fonts reserve descender space that unused text (all-caps headlines,
-     tightly-leaded display text) leaves as extra empty space below the
-     text - noticeably uneven at the large sizes/tight line-heights this
-     tool is often used to test. Trimming the line box to actual
-     cap-height/baseline instead of the font's full ascent/descent fixes
-     it. Chrome/Edge 133+ and Safari 18.2+ support this; unsupported
-     browsers just ignore it and keep today's behavior - safe with no
-     fallback needed.
-     Scoped to text:not(:has(p)) - standalone text blocks only, NEVER a
-     <p> itself or anything containing one. Paragraphs here have
-     margin: 0 (see .paraBlock below), so the gap between them is
-     entirely the leading this trims - applying it per-paragraph
-     removes that gap from both sides at once and runs them together. */
+  
   .fe-demo text:not(:has(p)) {
     text-box-trim: trim-both;
     text-box-edge: cap alphabetic;
@@ -25,6 +14,11 @@
     font-family:"Leafy Sans";
     font-weight: 400px;
     font-size: 16px;
+  }
+  
+  .bumpertop, .bumperbottom {
+    height: 0;
+    transition: height .2s ease;
   }
  
 input[type="range"] {
@@ -72,7 +66,7 @@ input[type="range"]::-moz-range-thumb {
     pointer-events: none;
     transform: translateY(10px);
     transition: .2s;
-    z-index: 5;
+    z-index: 41;
     background: #333;
   }
   .fe-controls-outer.visible {
@@ -81,38 +75,31 @@ input[type="range"]::-moz-range-thumb {
     pointer-events: auto;
     transform: translateY(0);
   }
-  /* Separate transform layer from .fe-controls-outer above - that one
-     handles the overall open/close slide, this one handles the
-     bottom-sheet peek/expand position, so neither has to fight the
-     other over the same property. Inert outside the narrow breakpoint
-     (JS never sets a transform on it there).
-     Background/pointer-events are handled differently per breakpoint:
-     on desktop there's no peek/collapse at all, so .fe-controls-outer
-     above (full viewport width) owns both, same as before this was a
-     sheet. Below the breakpoint they move to .fe-sheet instead (see
-     media query below) - .fe-sheet is the element that actually moves,
-     and .fe-controls-outer stays exactly as tall as the sheet's
-     UNtransformed (fully expanded) height regardless of the sheet's
-     real on-screen position, since transform never changes layout
-     size, only where something paints. */
+ 
   .fe-sheet {
     width: 100%;
     max-width: 1300px;
     transition: transform .2s ease;
   }
+
   .fe-sheet-handle {
     all: unset;
     display: none;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    padding: 8px 0 4px;
-    cursor: grab;
-    touch-action: none; /* Let JS handle the drag instead of page scroll. */
+    gap: 6px;
+    width: fit-content;
+    margin: 0;
+    padding: 8px 24px;
+    background: #000;
+    opacity:.7;
+    border-radius: 0 0 10px 10px;
+    cursor: pointer;
     color: #f0f0f0;
   }
-  .fe-sheet-handle:active {
-    cursor: grabbing;
+  .fe-sheet-handle:hover {
+    background: #b9b800;
+    opacity: 1;
   }
   .fe-sheet-handle-arrow {
     display: inline-flex;
@@ -126,17 +113,7 @@ input[type="range"]::-moz-range-thumb {
     .fe-sheet-handle {
       display: flex;
     }
-    /* Mobile: anchor to the top instead of the bottom, and hand off
-       background/pointer-events to .fe-sheet so they track its actual
-       (peek/expand-transformed) position - see the long comment above
-       .fe-sheet for why that has to happen on the moving element
-       rather than this always-full-height container. Anchoring to the
-       top sidesteps the on-screen keyboard entirely (it only ever
-       covers the bottom), which is also why there's no keyboard-
-       tracking JS to worry about here - the accessory bar many mobile
-       keyboards show above themselves (autofill suggestions, a
-       "Done" button, etc.) doesn't report its own height reliably,
-       which made bottom-anchored positioning hard to predict. */
+   
     .fe-controls-outer {
       inset: 0% 0% auto;
       transform: translateY(-10px);
@@ -146,7 +123,6 @@ input[type="range"]::-moz-range-thumb {
       pointer-events: none;
     }
     .fe-sheet {
-      background: #333;
       pointer-events: none;
     }
     .fe-controls-outer.visible .fe-sheet {
@@ -162,6 +138,7 @@ input[type="range"]::-moz-range-thumb {
     flex-direction: column;
     gap: 12px;
     padding: 20px;
+    background: #333;
     font-family: inherit;
     font-weight: 400;
     line-height: 1.2em;
@@ -172,7 +149,9 @@ input[type="range"]::-moz-range-thumb {
   }
   @media (max-width: 767px) {
     .fe-controls {
-      padding-bottom: 0px;
+      padding-bottom: 20px;
+      flex-direction: column-reverse;
+      
     }
   }
   .fe-ot-wrapper {
@@ -254,7 +233,7 @@ input[type="range"]::-moz-range-thumb {
      display:flex, which is declared later in the stylesheet and would
      otherwise win any same-specificity tie regardless of this media
      query's condition. */
-  @media (max-width: 990px) {
+  @media (max-width: 991px) {
     .fe-sliders-toggle {
       display: inline-flex;
     }
@@ -335,7 +314,7 @@ input[type="range"]::-moz-range-thumb {
   .fe-control-row
   {
     display: flex;
-    flex-flow: wrap;
+    flex-flow: wrap-reverse;
     justify-content: flex-start;
     align-items: center;
     gap: 13px;
@@ -446,7 +425,7 @@ input[type="range"]::-moz-range-thumb {
     height: 1lh;
     font-size: 16px;
     line-height: 1.2em;
-    min-width: 0;
+    min-width: 70px;
   }
   .fe-sample-dropdown .fe-dropdown-button:hover {
     background-color: #b9b800;
@@ -497,11 +476,7 @@ input[type="range"]::-moz-range-thumb {
   .fe-dropdown-popup.visible {
     display: flex;
   }
-  /* The panel is top-anchored on mobile (see the earlier media query),
-     so a popup opening upward from it would push off the top of the
-     screen instead of appearing over visible content - open downward
-     there instead. Desktop is unaffected; the panel is bottom-anchored
-     there, where opening upward is correct. */
+
   @media (max-width: 767px) {
     .fe-ot-popup,
     .fe-dropdown-popup {
@@ -529,3 +504,4 @@ input[type="range"]::-moz-range-thumb {
     background: #b9b800;
     color: #f0f0f0;
   }
+</style>
