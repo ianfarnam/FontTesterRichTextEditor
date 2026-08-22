@@ -939,6 +939,21 @@ function initFontEditor(root) {
     if (!isNarrow()) return;
     setSheetExpanded(!sheetExpanded);
   });
+// Mobile Safari (and possibly other mobile browsers) doesn't reliably
+// move focus to a <button> on tap the way a desktop mouse click does -
+// text inputs and contenteditable do get focused reliably, buttons
+// often don't. That means tapping any control in this panel (the
+// handle, align buttons, reset, etc.) can leave focus nowhere inside
+// root at all - falling back to document.body - which the focusout
+// check below would otherwise read as "focus left entirely" and close
+// the whole panel. Tracking a pointerdown that originated inside the
+// panel and skipping the next focusout check when one just happened
+// fixes that regardless of whether focus actually lands on the
+// tapped control.
+  let pointerDownInPanel = false;
+  controlsOuter.addEventListener("pointerdown", () => {
+    pointerDownInPanel = true;
+  });
   root.addEventListener("focusin", () => {
     const wasVisible = controlsOuter.classList.contains("visible");
     controlsOuter.classList.add("visible");
@@ -967,6 +982,10 @@ function initFontEditor(root) {
   });
   root.addEventListener("focusout", () => {
     requestAnimationFrame(() => {
+      if (pointerDownInPanel) {
+        pointerDownInPanel = false;
+        return;
+      }
       if (!root.contains(document.activeElement)) {
         controlsOuter.classList.remove("visible");
         updateBumpers();
